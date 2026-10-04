@@ -86,14 +86,14 @@ sologsb101-1022/
         ├── App.vue             # 顶部导航（6 个模块）+ 底部数据说明
         ├── env.d.ts
         ├── styles/main.css
-        ├── types/              # formula.ts material.ts proportion.ts batch.ts cellar.ts tasting.ts
-        ├── stores/             # formulaStore.ts materialStore.ts proportionStore.ts cellarStore.ts
+        ├── types/              # formula.ts material.ts proportion.ts batch.ts cellar.ts tasting.ts reconcile.ts
+        ├── stores/             # formulaStore.ts materialStore.ts proportionStore.ts cellarStore.ts pendingStore.ts
         ├── components/common/  # GradeTag.vue FilterBar.vue StatBadge.vue EmptyPanel.vue
         ├── hooks/              # useProportion.ts useIdbTable.ts
         ├── pages/              # FormulaList.vue MaterialLib.vue ProportionBoard.vue
-        │                       # BatchList.vue CellarView.vue TastingBoard.vue
+        │                       # BatchList.vue CellarView.vue TastingBoard.vue ReconcileCenter.vue
         ├── router/index.ts
-        └── utils/              # ratio.ts db.ts export.ts
+        └── utils/              # ratio.ts db.ts export.ts reconcile.ts
 ```
 
 | 路由 | 页面 | 主要职责 | 消费模型 |
@@ -103,7 +103,8 @@ sologsb101-1022/
 | `/proportions` | 配比与君臣佐使 | 君臣佐使编排、占比实时校验 100%、一键等比缩放与归一化、**HTML5 原生拖拽排序写回 `seq`**、按权重一键重排 | Proportion、Formula、Material |
 | `/batches` | 和香工序与成型 | 登记和香批次（自动固化配比快照）、快照与当前方子逐味对照、开批次前校验配比是否平衡 | Batch、Formula、Proportion |
 | `/cellar` | 窖藏与环境 | 入窖/出窖登记、温湿度就地录入、按剩余天数排序的临近出窖提醒、状态流转（窖藏中 → 已出窖）、批量处理逾期 | Cellar、Batch、Formula |
-| `/tastings` | 品香评鉴与导出 | 香韵 / 留香 / 烟气评分录入、同批次多次评鉴取均分并回写香方列表、结构版本查看、全量 JSON 导出与导入校验 | Tasting、Batch、全部模型 |
+| `/tastings` | 品香评鉴与导出 | 香韵 / 留香 / 烟气评分录入、同批次多次评鉴取均分并回写香方列表、结构版本查看、全量 JSON 导出 | Tasting、Batch、全部模型 |
+| `/reconcile` | 备份对账合并 | 离线回传备份按稳定业务编号与本地档案对账：单边直接建档、同编号两边不同两版并排由制香师选定、批次固化配比快照受保护、孤儿窖藏/品香归属前挂起、失败整批回滚并留待处理清单、旧备份先补编号 | 全部模型 |
 
 `/` 与未匹配路径均重定向到 `/formulas`；页面组件全部懒加载，`router.afterEach` 同步 `document.title`。
 
@@ -128,8 +129,15 @@ sologsb101-1022/
   2. 批次表补齐 `snapshot` 数组与 `snapshotAt`；
   3. 品香表补齐 `lastingMin` 默认值。
 - **首屏自动播种**：`main.ts` 在挂载前调用 `initDatabase()`，其中包含 `if ((await db.formulas.count()) === 0) { await seedDatabase() }`，写入 3 款香方 → 7 条配比 / 2 个和香批次 → 2 条窖藏 / 2 条品香（香方 → 配比/批次 → 窖藏/品香 三层互相引用）。播种使用固定 id + `bulkPut`，**幂等**，重复调用不会产生重复数据。
-- **localStorage 元数据**：`gbincense:db-version`（结构版本）、`gbincense:last-backup-at`（上次导出时间）、`gbincense:ui-prefs`（当前香方、配比与窖藏排序方式）。
-- **导出 / 导入**：`utils/export.ts` 提供 `exportFormulaJson()`（单方）与 `exportSnapshotJson()`（全量），导入前用 `validateFormulaJson()` / `validateSnapshotJson()` 做字段与枚举校验，校验失败会提示具体错误且不写库。
+- **localStorage 元数据**：`gbincense:db-version`（结构版本）、`gbincense:last-backup-at`（上次导出时间）、`gbincense:ui-prefs`（当前香方、配比与窖藏排序方式）、`gbincense:pending-items`（对账待处理清单：导入失败 / 孤儿归属 / 补编号留痕）。
+- **导出 / 导入**：`utils/export.ts` 提供 `exportFormulaJson()`（单方）与 `exportSnapshotJson()`（全量），导入前用 `validateFormulaJson()` 做字段与枚举校验，校验失败会提示具体错误且不写库。
+- **离线备份对账合并**（`utils/reconcile.ts` + `/reconcile` 页面）：制香工作室与合作作坊各自离线维护档案，回传备份不再做覆盖式导入，而是按**稳定业务编号（主键 id）**对账：
+  1. **单边出现直接建档**：香方、和香批次、品香评鉴（及香料、配比、窖藏）某编号只在备份或只在本地出现时，只新建不动另一边，本地新补的配比与品香不会被压掉；
+  2. **同编号两边不同 → 两版保留由制香师选定**：逐字段并排展示「本地版 / 备份版」，未全部选定前禁止提交；两边仅 `updatedAt` 不同则自动取较新，不打扰制香师；
+  3. **固化配比快照不跟随改动**：和香批次冲突无论选定哪版，`snapshot` / `snapshotAt` 恒保留本地已固化快照（本地快照为空时才接纳备份快照），快照字段差异本身也不产生冲突；
+  4. **归属闸口**：窖藏 / 品香的 `batchId` 在「本地 ∪ 备份」批次集合中找不到时记为**孤儿**，提交后只挂到待处理清单、不入库；因此香方台账的品香均分、最近评分与窖藏临近出窖提醒都不会计入尚未归属批次的记录，待在对账中心选定归属批次后单条并入并即时参与计算；
+  5. **整批回滚 + 待处理清单**：提交在单个 Dexie 六表读写事务中完成，存在未决冲突或任一步写入异常都整体回滚、本地维持对账前状态；导入失败原因、孤儿记录、补编号留痕写入 localStorage 键 `gbincense:pending-items`（`stores/pendingStore.ts`），跨会话保留，顶导航「备份对账」徽标提示待处理数量；
+  6. **旧备份先补编号再对账**：规范化阶段（`normalizeSnapshot()`）对缺失 / 非法 `id` 的老记录按业务键（香方名+创方日、批次所属香方+和香日期+制香人等）做 FNV 派生的**确定性编号**（前缀 `legacy_*`），重复导入同一份旧备份不会重复建档；枚举非法、引用香方缺失等问题在此阶段即报错整批回滚。
 - **无命名卷、无后端**：数据只在本浏览器，清理浏览器站点数据即清空；应用内提供「重置演示数据」按钮可恢复样例档案。
 
 ---

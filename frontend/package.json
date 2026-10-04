@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview --port 22822"
+    "preview": "vite preview --port 22822",
+    "test:reconcile": "esbuild scripts/reconcile.test.ts --bundle --platform=node --format=cjs --outfile=./.reconcile-test.cjs --external:esbuild --log-level=warning && node ./.reconcile-test.cjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

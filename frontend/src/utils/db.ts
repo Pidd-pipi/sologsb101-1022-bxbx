@@ -13,7 +13,8 @@ export const DB_VERSION = 2
 export const LS_KEYS = {
   dbVersion: 'gbincense:db-version',
   lastBackupAt: 'gbincense:last-backup-at',
-  uiPrefs: 'gbincense:ui-prefs'
+  uiPrefs: 'gbincense:ui-prefs',
+  pendingItems: 'gbincense:pending-items'
 } as const
 
 export interface UiPrefs {
@@ -211,23 +212,6 @@ export async function exportSnapshot(): Promise<IncenseSnapshot> {
     cellars,
     tastings
   }
-}
-
-/** 按主键 bulkPut 写入快照；overwrite 为 true 时先清空全部表 */
-export async function importSnapshot(snapshot: IncenseSnapshot, overwrite = false): Promise<void> {
-  if (overwrite) await clearAllTables()
-  await db.transaction(
-    'rw',
-    [db.formulas, db.materials, db.proportions, db.batches, db.cellars, db.tastings],
-    async () => {
-      await db.formulas.bulkPut(snapshot.formulas)
-      await db.materials.bulkPut(snapshot.materials)
-      await db.proportions.bulkPut(snapshot.proportions)
-      await db.batches.bulkPut(snapshot.batches)
-      await db.cellars.bulkPut(snapshot.cellars)
-      await db.tastings.bulkPut(snapshot.tastings)
-    }
-  )
 }
 
 /** 重置本地库：清空后重新播种演示档案 */

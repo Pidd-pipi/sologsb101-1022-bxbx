@@ -10,12 +10,7 @@ import StatBadge from '@/components/common/StatBadge.vue'
 import { useFormulaStore } from '@/stores/formulaStore'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import { DB_VERSION, readLastBackupAt, resetDatabase } from '@/utils/db'
-import {
-  exportSnapshotJson,
-  importSnapshotPayload,
-  readFileText,
-  validateSnapshotJson
-} from '@/utils/export'
+import { exportSnapshotJson } from '@/utils/export'
 import { round } from '@/utils/ratio'
 import type { Batch } from '@/types/batch'
 import {
@@ -37,13 +32,9 @@ const batchTable = useIdbTable<Batch>((database) => database.batches, { sortByUp
 
 const filter = ref<TastingFilterState>(createEmptyTastingFilter())
 const dialogVisible = ref(false)
-const importVisible = ref(false)
 const submitting = ref(false)
 const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
-const importText = ref('')
-const importFileName = ref('')
-const importOverwrite = ref(false)
 
 const form = reactive<{
   batchId: string
@@ -338,46 +329,8 @@ async function exportSnapshot(): Promise<void> {
   )
 }
 
-function openImport(): void {
-  importText.value = ''
-  importFileName.value = ''
-  importOverwrite.value = false
-  importVisible.value = true
-}
-
-async function handleImportFile(file: File): Promise<void> {
-  importFileName.value = file.name
-  importText.value = await readFileText(file)
-}
-
-function onImportFileChange(event: Event): void {
-  const input = event.target as HTMLInputElement
-  const file = input.files && input.files[0]
-  if (file) void handleImportFile(file)
-}
-
-async function submitImport(): Promise<void> {
-  if (importText.value.trim().length === 0) {
-    ElMessage.warning('请先选择或粘贴快照 JSON 内容')
-    return
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(importText.value)
-  } catch {
-    ElMessage.error('JSON 解析失败：文件内容不是合法 JSON')
-    return
-  }
-  const result = validateSnapshotJson(parsed)
-  if (!result.ok || !result.payload) {
-    ElMessage.error(`导入校验未通过：${result.errors.slice(0, 3).join('；')}`)
-    return
-  }
-  const counts = await importSnapshotPayload(result.payload, importOverwrite.value)
-  importVisible.value = false
-  ElMessage.success(
-    `已导入快照（香方 ${counts.formulas} / 香料 ${counts.materials} / 配比 ${counts.proportions} / 批次 ${counts.batches}）`
-  )
+function openReconcile(): void {
+  void router.push('/reconcile')
 }
 
 async function reseed(): Promise<void> {
@@ -413,7 +366,7 @@ function onlyFormula(formulaId: string): void {
         </p>
       </div>
       <div class="page-title__actions">
-        <el-button :icon="Upload" @click="openImport">导入 JSON</el-button>
+        <el-button :icon="Upload" @click="openReconcile">备份对账合并</el-button>
         <el-button :icon="Download" @click="exportSnapshot">导出全量 JSON</el-button>
         <el-button :icon="Refresh" @click="reseed">重置演示数据</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">录入品香</el-button>
@@ -571,25 +524,6 @@ function onlyFormula(formulaId: string): void {
         <el-button type="primary" :loading="submitting" @click="submitForm">
           {{ editingId ? '保存修改' : '保存并计算均分' }}
         </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="importVisible" title="导入 JSON 快照" width="620px" append-to-body>
-      <el-form label-width="104px">
-        <el-form-item label="选择文件">
-          <input class="import-file" type="file" accept="application/json,.json" @change="onImportFileChange" />
-          <span v-if="importFileName" class="muted">{{ importFileName }}</span>
-        </el-form-item>
-        <el-form-item label="覆盖导入">
-          <el-switch v-model="importOverwrite" active-text="清空现有数据后导入" />
-        </el-form-item>
-        <el-form-item label="JSON 内容">
-          <el-input v-model="importText" type="textarea" :rows="10" placeholder="粘贴由「导出全量 JSON」生成的文件内容" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="importVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitImport">校验并导入</el-button>
       </template>
     </el-dialog>
   </div>

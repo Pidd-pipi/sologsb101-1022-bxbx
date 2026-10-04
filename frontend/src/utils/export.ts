@@ -4,7 +4,6 @@ import {
   createId,
   stampBackupTime,
   exportSnapshot,
-  importSnapshot,
   type IncenseSnapshot
 } from '@/utils/db'
 import {
@@ -484,22 +483,6 @@ export async function importFormulaPayload(
       cellars: cellars.length,
       tastings: tastings.length
     }
-  }
-}
-
-/** 覆盖式导入全量快照 */
-export async function importSnapshotPayload(
-  snapshot: IncenseSnapshot,
-  overwrite: boolean
-): Promise<Record<string, number>> {
-  await importSnapshot(snapshot, overwrite)
-  return {
-    formulas: snapshot.formulas.length,
-    materials: snapshot.materials.length,
-    proportions: snapshot.proportions.length,
-    batches: snapshot.batches.length,
-    cellars: snapshot.cellars.length,
-    tastings: snapshot.tastings.length
   }
 }
 

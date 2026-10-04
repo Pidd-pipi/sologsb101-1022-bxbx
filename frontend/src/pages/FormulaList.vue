@@ -393,6 +393,16 @@ const ratioText = (card: FormulaCard): string => `${round(card.formula.totalRati
         <div class="formula-card__tags">
           <GradeTag v-if="card.latestScore !== null" :score="card.latestScore" label="最近品香" size="small" plain />
           <GradeTag v-else label="尚无品香" size="small" plain />
+          <el-tag
+            v-if="card.cellarAlertCount > 0"
+            type="danger"
+            size="small"
+            effect="plain"
+            round
+            class="cellar-alert-tag"
+          >
+            临近出窖 {{ card.cellarAlertCount }} 批
+          </el-tag>
           <span v-if="card.ratioGap !== 0" class="ratio-error">
             配比偏差 {{ card.ratioGap > 0 ? '+' : '' }}{{ card.ratioGap }}%
           </span>

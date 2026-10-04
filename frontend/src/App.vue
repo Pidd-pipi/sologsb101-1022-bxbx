@@ -2,11 +2,12 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Component } from 'vue'
-import { Box, Coin, Files, Histogram, Notebook, Sugar } from '@element-plus/icons-vue'
+import { Box, Coin, Files, Histogram, Notebook, Sugar, Switch } from '@element-plus/icons-vue'
 import { useFormulaStore } from '@/stores/formulaStore'
 import { useMaterialStore } from '@/stores/materialStore'
 import { useProportionStore } from '@/stores/proportionStore'
 import { useCellarStore } from '@/stores/cellarStore'
+import { usePendingStore } from '@/stores/pendingStore'
 import { DB_VERSION } from '@/utils/db'
 
 const route = useRoute()
@@ -15,6 +16,7 @@ const formulaStore = useFormulaStore()
 const materialStore = useMaterialStore()
 const proportionStore = useProportionStore()
 const cellarStore = useCellarStore()
+const pendingStore = usePendingStore()
 
 interface NavItem {
   path: string
@@ -66,6 +68,13 @@ const navItems = computed<NavItem[]>(() => [
     icon: Sugar,
     badge: String(formulaStore.tastings.length),
     hint: '香韵评分与 JSON 导出'
+  },
+  {
+    path: '/reconcile',
+    label: '备份对账',
+    icon: Switch,
+    badge: String(pendingStore.attentionCount),
+    hint: '离线备份按业务编号对账合并'
   }
 ])
 

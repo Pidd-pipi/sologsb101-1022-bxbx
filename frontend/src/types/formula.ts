@@ -40,6 +40,8 @@ export interface FormulaCard {
   /** 同香方全部品香均分，无评鉴时为 null */
   averageScore: number | null
   batchCount: number
+  /** 已归属到该香方批次的窖藏中，临近出窖（含逾期）数量；归属闸口保证不含悬空窖藏 */
+  cellarAlertCount: number
   /** 配比合计与 100 的偏差 */
   ratioGap: number
 }

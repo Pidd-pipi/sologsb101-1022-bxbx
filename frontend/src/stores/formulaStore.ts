@@ -3,7 +3,10 @@ import { computed, ref, watch } from 'vue'
 import { db, createId, readUiPrefs, writeUiPrefs } from '@/utils/db'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import type { Batch } from '@/types/batch'
+import type { Cellar } from '@/types/cellar'
+import { CELLAR_NEAR_DAYS } from '@/types/cellar'
 import type { Tasting } from '@/types/tasting'
+import { daysBetween, todayIso } from '@/utils/date'
 import {
   createEmptyFormulaFilter,
   FORMULA_STATE_FLOW,
@@ -24,6 +27,7 @@ export const useFormulaStore = defineStore('formula', () => {
   const formulaTable = useIdbTable<Formula>((database) => database.formulas)
   const batchTable = useIdbTable<Batch>((database) => database.batches)
   const tastingTable = useIdbTable<Tasting>((database) => database.tastings)
+  const cellarTable = useIdbTable<Cellar>((database) => database.cellars)
 
   const prefs = readUiPrefs()
   const currentFormulaId = ref<string | null>(prefs.lastFormulaId)
@@ -75,6 +79,26 @@ export const useFormulaStore = defineStore('formula', () => {
     return grouped
   })
 
+  /**
+   * 香方 id → 临近出窖窖藏条数（逾期或 14 天内到期的在窖记录）。
+   * 归属闸口：窖藏必须能经 batchId 关联到本库批次才计入；
+   * 对账挂起的孤儿窖藏未入库，因此绝不会在此形成「新提醒」。
+   */
+  const cellarAlertsByFormula = computed<Record<string, number>>(() => {
+    const batchToFormula = new Map<string, string>()
+    batches.value.forEach((batch) => batchToFormula.set(batch.id, batch.formulaId))
+    const counts: Record<string, number> = {}
+    cellarTable.rows.value.forEach((cellar) => {
+      if (cellar.state !== '窖藏中') return
+      const remain = daysBetween(todayIso(), cellar.endDate)
+      if (remain > CELLAR_NEAR_DAYS) return
+      const formulaId = batchToFormula.get(cellar.batchId)
+      if (!formulaId) return
+      counts[formulaId] = (counts[formulaId] ?? 0) + 1
+    })
+    return counts
+  })
+
   /** 同香方全部品香的评分均分 */
   const scoreAggregates = computed<Record<string, { count: number; average: number; latestAt: string }>>(() => {
     const aggregate: Record<string, { count: number; average: number; latestAt: string }> = {}
@@ -103,6 +127,7 @@ export const useFormulaStore = defineStore('formula', () => {
         latestScore: latest?.smokeScore ?? null,
         averageScore: aggregate?.average ?? null,
         batchCount: (batchesByFormula.value[formula.id] ?? []).length,
+        cellarAlertCount: cellarAlertsByFormula.value[formula.id] ?? 0,
         ratioGap: round(formula.totalRatio - 100, 2)
       }
     })
@@ -293,6 +318,7 @@ export const useFormulaStore = defineStore('formula', () => {
     filteredCards,
     batchesByFormula,
     tastingsByFormula,
+    cellarAlertsByFormula,
     scoreAggregates,
     stateCounts,
     hasFilter,

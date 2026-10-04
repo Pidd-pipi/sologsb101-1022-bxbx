@@ -42,6 +42,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '品香评鉴与导出', icon: 'Sugar' }
   },
   {
+    path: '/reconcile',
+    name: 'reconcile-center',
+    component: () => import('@/pages/ReconcileCenter.vue'),
+    meta: { title: '备份对账合并', icon: 'Switch' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/formulas'
   }
