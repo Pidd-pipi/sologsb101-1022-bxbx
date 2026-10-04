@@ -8,14 +8,10 @@ import FilterBar, { type FilterModel } from '@/components/common/FilterBar.vue'
 import GradeTag from '@/components/common/GradeTag.vue'
 import StatBadge from '@/components/common/StatBadge.vue'
 import { useFormulaStore } from '@/stores/formulaStore'
+import { useMergeStore } from '@/stores/mergeStore'
 import { useIdbTable } from '@/hooks/useIdbTable'
 import { DB_VERSION, readLastBackupAt, resetDatabase } from '@/utils/db'
-import {
-  exportSnapshotJson,
-  importSnapshotPayload,
-  readFileText,
-  validateSnapshotJson
-} from '@/utils/export'
+import { exportSnapshotJson, readFileText } from '@/utils/export'
 import { round } from '@/utils/ratio'
 import type { Batch } from '@/types/batch'
 import {
@@ -32,6 +28,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const formulaStore = useFormulaStore()
+const mergeStore = useMergeStore()
 const tastingTable = useIdbTable<Tasting>((database) => database.tastings)
 const batchTable = useIdbTable<Batch>((database) => database.batches, { sortByUpdatedAt: false })
 
@@ -43,7 +40,6 @@ const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
 const importText = ref('')
 const importFileName = ref('')
-const importOverwrite = ref(false)
 
 const form = reactive<{
   batchId: string
@@ -341,7 +337,6 @@ async function exportSnapshot(): Promise<void> {
 function openImport(): void {
   importText.value = ''
   importFileName.value = ''
-  importOverwrite.value = false
   importVisible.value = true
 }
 
@@ -368,16 +363,19 @@ async function submitImport(): Promise<void> {
     ElMessage.error('JSON 解析失败：文件内容不是合法 JSON')
     return
   }
-  const result = validateSnapshotJson(parsed)
-  if (!result.ok || !result.payload) {
-    ElMessage.error(`导入校验未通过：${result.errors.slice(0, 3).join('；')}`)
-    return
+  try {
+    const result = await mergeStore.mergeFile(parsed, importFileName.value || '全量快照.json')
+    importVisible.value = false
+    const { inserted, conflicts, orphans, skipped } = result.counts
+    ElMessage.success(
+      `对账完成：直接建档 ${inserted} 条 · 两边一致跳过 ${skipped} 条 · 冲突待选定 ${conflicts} 条 · 孤儿待归属 ${orphans} 条`
+    )
+    if (conflicts > 0 || orphans > 0) {
+      ElMessage.info('可到「对账中心」选定冲突版本或归属孤儿窖藏/品香')
+    }
+  } catch (err) {
+    ElMessage.error(`导入失败，已整批回滚：${err instanceof Error ? err.message : '未知错误'}。可到「对账中心」查看待处理清单`)
   }
-  const counts = await importSnapshotPayload(result.payload, importOverwrite.value)
-  importVisible.value = false
-  ElMessage.success(
-    `已导入快照（香方 ${counts.formulas} / 香料 ${counts.materials} / 配比 ${counts.proportions} / 批次 ${counts.batches}）`
-  )
 }
 
 async function reseed(): Promise<void> {
@@ -574,14 +572,16 @@ function onlyFormula(formulaId: string): void {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importVisible" title="导入 JSON 快照" width="620px" append-to-body>
+    <el-dialog v-model="importVisible" title="导入 JSON 快照（按业务编号对账）" width="620px" append-to-body>
       <el-form label-width="104px">
         <el-form-item label="选择文件">
           <input class="import-file" type="file" accept="application/json,.json" @change="onImportFileChange" />
           <span v-if="importFileName" class="muted">{{ importFileName }}</span>
         </el-form-item>
-        <el-form-item label="覆盖导入">
-          <el-switch v-model="importOverwrite" active-text="清空现有数据后导入" />
+        <el-form-item label="对账说明">
+          <span class="muted">
+            按稳定业务编号对账：仅单边出现直接建档；两边同编号内容不同则保留两版待你选定；归属不到批次的窖藏/品香暂挂起，不进香方均分与提醒。
+          </span>
         </el-form-item>
         <el-form-item label="JSON 内容">
           <el-input v-model="importText" type="textarea" :rows="10" placeholder="粘贴由「导出全量 JSON」生成的文件内容" />
@@ -589,7 +589,7 @@ function onlyFormula(formulaId: string): void {
       </el-form>
       <template #footer>
         <el-button @click="importVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitImport">校验并导入</el-button>
+        <el-button type="primary" @click="submitImport">校验并对账导入</el-button>
       </template>
     </el-dialog>
   </div>

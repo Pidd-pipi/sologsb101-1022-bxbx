@@ -1,8 +1,8 @@
 import { liveQuery } from 'dexie'
 import { onScopeDispose, ref, shallowRef, type Ref } from 'vue'
-import { db, createId } from '@/utils/db'
+import { db, createId, createBizNo } from '@/utils/db'
 
-export type IdbRecord = { id: string; updatedAt?: number }
+export type IdbRecord = { id: string; updatedAt?: number; bizNo?: string }
 
 export interface UseIdbTableOptions<T extends IdbRecord> {
   /** 是否按 updatedAt 倒序，默认 true */
@@ -13,9 +13,10 @@ export interface UseIdbTableOptions<T extends IdbRecord> {
   onChange?: (rows: T[]) => void
 }
 
-/** 新增记录入参：id / updatedAt 由封装层补齐 */
-export type NewRecord<T extends IdbRecord> = Omit<T, 'id' | 'updatedAt'> & {
+/** 新增记录入参：id / bizNo / updatedAt 由封装层补齐 */
+export type NewRecord<T extends IdbRecord> = Omit<T, 'id' | 'updatedAt' | 'bizNo'> & {
   id?: string
+  bizNo?: string
   updatedAt?: number
 }
 
@@ -84,6 +85,7 @@ export function useIdbTable<T extends IdbRecord>(
     const record = {
       ...(payload as object),
       id: payload.id ?? createId(idPrefix),
+      bizNo: payload.bizNo ?? createBizNo(idPrefix),
       updatedAt: payload.updatedAt ?? now
     } as T
     await table.put(record)

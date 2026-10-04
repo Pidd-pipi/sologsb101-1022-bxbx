@@ -4,6 +4,8 @@ export type CellarContainer = '陶罐' | '锡罐' | '竹筒'
 
 export interface Cellar {
   id: string
+  /** 稳定业务编号：跨设备离线对账的合并键 */
+  bizNo: string
   /** 关联和香批次 */
   batchId: string
   /** 入窖日期（ISO 日期串 yyyy-MM-dd） */

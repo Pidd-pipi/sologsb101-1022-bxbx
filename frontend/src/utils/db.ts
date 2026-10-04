@@ -5,9 +5,10 @@ import type { Proportion } from '@/types/proportion'
 import type { Batch } from '@/types/batch'
 import type { Cellar } from '@/types/cellar'
 import type { Tasting } from '@/types/tasting'
+import type { MergePendingItem } from '@/types/merge'
 
 /** 本地结构版本号：新增/修改表结构时必须递增，并补充 upgrade 迁移 */
-export const DB_VERSION = 2
+export const DB_VERSION = 3
 
 /** 本地存储键名（localStorage 侧的少量元数据） */
 export const LS_KEYS = {
@@ -51,6 +52,8 @@ export class IncenseDatabase extends Dexie {
   batches!: Table<Batch, string>
   cellars!: Table<Cellar, string>
   tastings!: Table<Tasting, string>
+  /** 对账待处理项：同编号冲突的导入版 / 暂无法归属批次的窖藏与品香 */
+  mergePending!: Table<MergePendingItem, string>
 
   constructor() {
     super('gbincense')
@@ -64,7 +67,7 @@ export class IncenseDatabase extends Dexie {
       tastings: 'id, batchId, tastedAt, smokeScore'
     })
     // v2：配比表补 seq 索引、批次与窖藏补日期索引，并回填历史脏数据
-    this.version(DB_VERSION)
+    this.version(2)
       .stores({
         formulas: 'id, name, scentType, usage, state, createdAt, totalRatio, updatedAt',
         materials: 'id, name, origin, grade, processMethod, updatedAt',
@@ -108,6 +111,38 @@ export class IncenseDatabase extends Dexie {
             }
           })
       })
+    // v3：全表补齐稳定业务编号 bizNo，新增 mergePending 待处理表
+    this.version(DB_VERSION)
+      .stores({
+        formulas: 'id, bizNo, name, scentType, usage, state, createdAt, totalRatio, updatedAt',
+        materials: 'id, bizNo, name, origin, grade, processMethod, updatedAt',
+        proportions: 'id, bizNo, formulaId, materialId, role, seq, updatedAt',
+        batches: 'id, bizNo, formulaId, mixedAt, formingMethod, updatedAt',
+        cellars: 'id, bizNo, batchId, startDate, endDate, state, updatedAt',
+        tastings: 'id, bizNo, batchId, tastedAt, smokeScore, updatedAt',
+        mergePending: 'id, importBatchId, kind, bizNo, status, createdAt'
+      })
+      .upgrade(async (tx) => {
+        // 迁移 4：为历史数据补齐 bizNo，作为跨设备离线对账的合并键
+        const tables: Array<{ name: string; prefix: string }> = [
+          { name: 'formulas', prefix: 'F' },
+          { name: 'materials', prefix: 'M' },
+          { name: 'proportions', prefix: 'P' },
+          { name: 'batches', prefix: 'B' },
+          { name: 'cellars', prefix: 'C' },
+          { name: 'tastings', prefix: 'T' }
+        ]
+        for (const table of tables) {
+          await tx
+            .table(table.name)
+            .toCollection()
+            .modify((record) => {
+              if (typeof record.bizNo !== 'string' || record.bizNo.length === 0) {
+                record.bizNo = createBizNo(table.prefix)
+              }
+            })
+        }
+      })
   }
 }
 
@@ -119,11 +154,24 @@ export function createId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${rand}`
 }
 
-/** 清空全部业务表，供「清空本地数据」与导入前的覆盖使用 */
+/**
+ * 生成稳定业务编号：日期 + 随机串，一经生成不再改变。
+ * 作为跨设备离线备份对账的合并键，与本地主键 id 分离。
+ */
+export function createBizNo(prefix: string): string {
+  const now = new Date()
+  const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+    now.getDate()
+  ).padStart(2, '0')}`
+  const rand = Math.random().toString(36).slice(2, 6)
+  return `${prefix}${ymd}-${rand}`
+}
+
+/** 清空全部业务表与对账待处理表，供「清空本地数据」与导入前的覆盖使用 */
 export async function clearAllTables(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.formulas, db.materials, db.proportions, db.batches, db.cellars, db.tastings],
+    [db.formulas, db.materials, db.proportions, db.batches, db.cellars, db.tastings, db.mergePending],
     async () => {
       await Promise.all([
         db.formulas.clear(),
@@ -131,7 +179,8 @@ export async function clearAllTables(): Promise<void> {
         db.proportions.clear(),
         db.batches.clear(),
         db.cellars.clear(),
-        db.tastings.clear()
+        db.tastings.clear(),
+        db.mergePending.clear()
       ])
     }
   )
@@ -253,6 +302,23 @@ const SEED_IDS = {
   tastingPill: 'seed_tasting_pill'
 } as const
 
+/** 固定稳定业务编号，播种记录的 bizNo 一经写入不再改变 */
+const SEED_BIZ = {
+  formulaLine: 'F-SEED-LINE',
+  formulaPill: 'F-SEED-PILL',
+  formulaPlate: 'F-SEED-PLATE',
+  materialChen: 'M-SEED-CHEN',
+  materialTan: 'M-SEED-TAN',
+  materialRuxiang: 'M-SEED-RUXIANG',
+  materialDing: 'M-SEED-DING',
+  batchLine: 'B-SEED-LINE',
+  batchPill: 'B-SEED-PILL',
+  cellarLine: 'C-SEED-LINE',
+  cellarPill: 'C-SEED-PILL',
+  tastingLine: 'T-SEED-LINE',
+  tastingPill: 'T-SEED-PILL'
+} as const
+
 /**
  * 播种三层互相引用的演示档案：香方（父）→ 配比 / 和香批次（子）→ 窖藏 / 品香（孙）。
  * 使用固定 id + bulkPut，重复调用不会产生重复数据。
@@ -274,6 +340,7 @@ export async function seedDatabase(): Promise<void> {
   const formulas: Formula[] = [
     {
       id: SEED_IDS.formulaLine,
+      bizNo: SEED_BIZ.formulaLine,
       name: '静室安神线香',
       scentType: '线香',
       usage: '静室',
@@ -284,6 +351,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.formulaPill,
+      bizNo: SEED_BIZ.formulaPill,
       name: '礼佛沉香丸',
       scentType: '香丸',
       usage: '礼佛',
@@ -294,6 +362,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.formulaPlate,
+      bizNo: SEED_BIZ.formulaPlate,
       name: '佩香辟秽盘香',
       scentType: '盘香',
       usage: '佩香',
@@ -307,6 +376,7 @@ export async function seedDatabase(): Promise<void> {
   const materials: Material[] = [
     {
       id: SEED_IDS.materialChen,
+      bizNo: SEED_BIZ.materialChen,
       name: '海南沉香',
       origin: '海南尖峰岭',
       grade: '特级',
@@ -317,6 +387,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.materialTan,
+      bizNo: SEED_BIZ.materialTan,
       name: '老山檀香',
       origin: '印度迈索尔',
       grade: '特级',
@@ -327,6 +398,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.materialRuxiang,
+      bizNo: SEED_BIZ.materialRuxiang,
       name: '乳香',
       origin: '阿曼佐法尔',
       grade: '一级',
@@ -337,6 +409,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.materialDing,
+      bizNo: SEED_BIZ.materialDing,
       name: '丁香',
       origin: '印尼马鲁古',
       grade: '二级',
@@ -355,6 +428,7 @@ export async function seedDatabase(): Promise<void> {
     rows.forEach((row, index) => {
       proportions.push({
         id: row[1],
+        bizNo: `P-SEED-${formulaId === SEED_IDS.formulaLine ? 'LINE' : 'PILL'}-${index + 1}`,
         formulaId,
         materialId: row[0],
         ratio: row[2],
@@ -382,6 +456,7 @@ export async function seedDatabase(): Promise<void> {
   const batches: Batch[] = [
     {
       id: SEED_IDS.batchLine,
+      bizNo: SEED_BIZ.batchLine,
       formulaId: SEED_IDS.formulaLine,
       mixedAt: '2024-04-01',
       formingMethod: '挤条',
@@ -393,6 +468,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.batchPill,
+      bizNo: SEED_BIZ.batchPill,
       formulaId: SEED_IDS.formulaPill,
       mixedAt: '2024-06-15',
       formingMethod: '炼蜜成丸',
@@ -407,6 +483,7 @@ export async function seedDatabase(): Promise<void> {
   const cellars: Cellar[] = [
     {
       id: SEED_IDS.cellarLine,
+      bizNo: SEED_BIZ.cellarLine,
       batchId: SEED_IDS.batchLine,
       startDate: '2024-04-05',
       endDate: '2024-10-05',
@@ -418,6 +495,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.cellarPill,
+      bizNo: SEED_BIZ.cellarPill,
       batchId: SEED_IDS.batchPill,
       startDate: '2024-06-20',
       endDate: '2025-06-20',
@@ -432,6 +510,7 @@ export async function seedDatabase(): Promise<void> {
   const tastings: Tasting[] = [
     {
       id: SEED_IDS.tastingLine,
+      bizNo: SEED_BIZ.tastingLine,
       batchId: SEED_IDS.batchLine,
       tastedAt: '2024-07-02',
       aroma: '初闻清甜，中段檀香渐起，尾调沉静',
@@ -442,6 +521,7 @@ export async function seedDatabase(): Promise<void> {
     },
     {
       id: SEED_IDS.tastingPill,
+      bizNo: SEED_BIZ.tastingPill,
       batchId: SEED_IDS.batchPill,
       tastedAt: '2024-09-11',
       aroma: '蜜香裹沉香，凉意收尾',

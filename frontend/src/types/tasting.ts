@@ -1,6 +1,8 @@
 /** 品香评鉴：对某一和香批次的闻香记录 */
 export interface Tasting {
   id: string
+  /** 稳定业务编号：跨设备离线对账的合并键 */
+  bizNo: string
   /** 关联和香批次 */
   batchId: string
   /** 品鉴日期（ISO 日期串 yyyy-MM-dd） */

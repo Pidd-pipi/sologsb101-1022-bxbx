@@ -2,6 +2,7 @@ import {
   db,
   DB_VERSION,
   createId,
+  createBizNo,
   stampBackupTime,
   exportSnapshot,
   importSnapshot,
@@ -177,6 +178,7 @@ function parseFormula(input: unknown, errors: string[]): Formula | null {
   if (errors.length > 0) return null
   return {
     id: asString(input.id, createId('formula')),
+    bizNo: asString(input.bizNo) || createBizNo('F'),
     name,
     scentType,
     usage,
@@ -207,6 +209,7 @@ function parseMaterial(raw: unknown, errors: string[], index: number): Material 
   }
   return {
     id: asString(raw.id, createId('material')),
+    bizNo: asString(raw.bizNo) || createBizNo('M'),
     name,
     origin: asString(raw.origin, '未记录'),
     grade: pickEnum<MaterialGrade>(raw.grade, MATERIAL_GRADE_SET, '二级'),
@@ -271,6 +274,7 @@ export function validateFormulaJson(input: unknown): ValidateResult<FormulaExpor
     }
     proportions.push({
       id: asString(raw.id, createId('prop')),
+      bizNo: asString(raw.bizNo) || createBizNo('P'),
       formulaId: formula.id,
       materialId,
       ratio,
@@ -294,6 +298,7 @@ export function validateFormulaJson(input: unknown): ValidateResult<FormulaExpor
     }
     batches.push({
       id: asString(raw.id, createId('batch')),
+      bizNo: asString(raw.bizNo) || createBizNo('B'),
       formulaId: formula.id,
       mixedAt: asString(raw.mixedAt, new Date().toISOString().slice(0, 10)),
       formingMethod: pickEnum<FormingMethod>(raw.formingMethod, FORMING_SET, '挤条'),
@@ -331,6 +336,7 @@ export function validateFormulaJson(input: unknown): ValidateResult<FormulaExpor
     }
     cellars.push({
       id: asString(raw.id, createId('cellar')),
+      bizNo: asString(raw.bizNo) || createBizNo('C'),
       batchId,
       startDate: asString(raw.startDate, new Date().toISOString().slice(0, 10)),
       endDate: asString(raw.endDate, new Date().toISOString().slice(0, 10)),
@@ -361,6 +367,7 @@ export function validateFormulaJson(input: unknown): ValidateResult<FormulaExpor
     }
     tastings.push({
       id: asString(raw.id, createId('tasting')),
+      bizNo: asString(raw.bizNo) || createBizNo('T'),
       batchId,
       tastedAt: asString(raw.tastedAt, new Date().toISOString().slice(0, 10)),
       aroma: asString(raw.aroma),
@@ -417,15 +424,21 @@ export async function importFormulaPayload(
   const batchIdMap = new Map<string, string>()
 
   const now = Date.now()
-  const formula: Formula = { ...payload.formula, id: formulaId, updatedAt: now }
+  const formula: Formula = {
+    ...payload.formula,
+    id: formulaId,
+    bizNo: payload.formula.bizNo || createBizNo('F'),
+    updatedAt: now
+  }
   const materials: Material[] = payload.materials.map((material) => {
     const id = createId('material')
     materialIdMap.set(material.id, id)
-    return { ...material, id, updatedAt: now }
+    return { ...material, id, bizNo: material.bizNo || createBizNo('M'), updatedAt: now }
   })
   const proportions: Proportion[] = payload.proportions.map((proportion, index) => ({
     ...proportion,
     id: createId('prop'),
+    bizNo: proportion.bizNo || createBizNo('P'),
     formulaId,
     materialId: materialIdMap.get(proportion.materialId) ?? proportion.materialId,
     seq: proportion.seq > 0 ? proportion.seq : index + 1,
@@ -437,6 +450,7 @@ export async function importFormulaPayload(
     return {
       ...batch,
       id,
+      bizNo: batch.bizNo || createBizNo('B'),
       formulaId,
       snapshot: batch.snapshot.map((item) => ({
         ...item,
@@ -450,6 +464,7 @@ export async function importFormulaPayload(
     .map((cellar) => ({
       ...cellar,
       id: createId('cellar'),
+      bizNo: cellar.bizNo || createBizNo('C'),
       batchId: batchIdMap.get(cellar.batchId) as string,
       updatedAt: now
     }))
@@ -458,6 +473,7 @@ export async function importFormulaPayload(
     .map((tasting) => ({
       ...tasting,
       id: createId('tasting'),
+      bizNo: tasting.bizNo || createBizNo('T'),
       batchId: batchIdMap.get(tasting.batchId) as string,
       updatedAt: now
     }))

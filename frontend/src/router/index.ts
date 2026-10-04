@@ -42,6 +42,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '品香评鉴与导出', icon: 'Sugar' }
   },
   {
+    path: '/merge',
+    name: 'merge-center',
+    component: () => import('@/pages/MergeCenter.vue'),
+    meta: { title: '对账中心', icon: 'Files' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/formulas'
   }

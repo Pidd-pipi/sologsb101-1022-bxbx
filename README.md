@@ -86,14 +86,14 @@ sologsb101-1022/
         ├── App.vue             # 顶部导航（6 个模块）+ 底部数据说明
         ├── env.d.ts
         ├── styles/main.css
-        ├── types/              # formula.ts material.ts proportion.ts batch.ts cellar.ts tasting.ts
-        ├── stores/             # formulaStore.ts materialStore.ts proportionStore.ts cellarStore.ts
+        ├── types/              # formula.ts material.ts proportion.ts batch.ts cellar.ts tasting.ts merge.ts
+        ├── stores/             # formulaStore.ts materialStore.ts proportionStore.ts cellarStore.ts mergeStore.ts
         ├── components/common/  # GradeTag.vue FilterBar.vue StatBadge.vue EmptyPanel.vue
         ├── hooks/              # useProportion.ts useIdbTable.ts
         ├── pages/              # FormulaList.vue MaterialLib.vue ProportionBoard.vue
-        │                       # BatchList.vue CellarView.vue TastingBoard.vue
+        │                       # BatchList.vue CellarView.vue TastingBoard.vue MergeCenter.vue
         ├── router/index.ts
-        └── utils/              # ratio.ts db.ts export.ts
+        └── utils/              # ratio.ts db.ts export.ts merge.ts
 ```
 
 | 路由 | 页面 | 主要职责 | 消费模型 |
@@ -104,6 +104,7 @@ sologsb101-1022/
 | `/batches` | 和香工序与成型 | 登记和香批次（自动固化配比快照）、快照与当前方子逐味对照、开批次前校验配比是否平衡 | Batch、Formula、Proportion |
 | `/cellar` | 窖藏与环境 | 入窖/出窖登记、温湿度就地录入、按剩余天数排序的临近出窖提醒、状态流转（窖藏中 → 已出窖）、批量处理逾期 | Cellar、Batch、Formula |
 | `/tastings` | 品香评鉴与导出 | 香韵 / 留香 / 烟气评分录入、同批次多次评鉴取均分并回写香方列表、结构版本查看、全量 JSON 导出与导入校验 | Tasting、Batch、全部模型 |
+| `/merge` | 对账中心 | 按稳定业务编号 `bizNo` 对账：仅单边出现直接建档、同编号两边冲突保留两版由制香师选定、孤儿窖藏/品香归属批次、导入失败整批回滚并留待处理清单 | 全部模型、MergePending |
 
 `/` 与未匹配路径均重定向到 `/formulas`；页面组件全部懒加载，`router.afterEach` 同步 `document.title`。
 
@@ -130,6 +131,7 @@ sologsb101-1022/
 - **首屏自动播种**：`main.ts` 在挂载前调用 `initDatabase()`，其中包含 `if ((await db.formulas.count()) === 0) { await seedDatabase() }`，写入 3 款香方 → 7 条配比 / 2 个和香批次 → 2 条窖藏 / 2 条品香（香方 → 配比/批次 → 窖藏/品香 三层互相引用）。播种使用固定 id + `bulkPut`，**幂等**，重复调用不会产生重复数据。
 - **localStorage 元数据**：`gbincense:db-version`（结构版本）、`gbincense:last-backup-at`（上次导出时间）、`gbincense:ui-prefs`（当前香方、配比与窖藏排序方式）。
 - **导出 / 导入**：`utils/export.ts` 提供 `exportFormulaJson()`（单方）与 `exportSnapshotJson()`（全量），导入前用 `validateFormulaJson()` / `validateSnapshotJson()` 做字段与枚举校验，校验失败会提示具体错误且不写库。
+- **按业务编号对账（`utils/merge.ts` + `mergePending` 表）**：全量快照导入走 `mergeSnapshotFile()`，以稳定业务编号 `bizNo` 为合并键，在一个事务内按 香方/香料 → 配比/批次 → 窖藏/品香 顺序处理：仅单边出现直接建档；同编号两边内容不一致则保留导入版为待处理项（`reason='conflict'`），由制香师在「对账中心」选版，本地版另存可切回；归属不到批次的窖藏/品香挂起为孤儿（`reason='orphan'`），归属批次前不进香方均分与窖藏提醒。固化过的批次配比快照不随对账改写。导入失败整批回滚，并在 localStorage `gbincense:merge-imports` 留下失败清单。旧备份缺 `bizNo` 时，`normalizeSnapshot()` 会先补齐再对账。
 - **无命名卷、无后端**：数据只在本浏览器，清理浏览器站点数据即清空；应用内提供「重置演示数据」按钮可恢复样例档案。
 
 ---

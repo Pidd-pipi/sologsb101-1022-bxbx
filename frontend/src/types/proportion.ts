@@ -3,6 +3,8 @@ export type ProportionRole = '君' | '臣' | '佐' | '使'
 
 export interface Proportion {
   id: string
+  /** 稳定业务编号：跨设备离线对账的合并键 */
+  bizNo: string
   /** 所属香方 */
   formulaId: string
   /** 引用香料 */

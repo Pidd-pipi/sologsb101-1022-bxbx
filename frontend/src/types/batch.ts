@@ -11,6 +11,8 @@ export interface BatchSnapshotItem {
 
 export interface Batch {
   id: string
+  /** 稳定业务编号：跨设备离线对账的合并键 */
+  bizNo: string
   /** 所属香方 */
   formulaId: string
   /** 和香日期（ISO 日期串 yyyy-MM-dd） */

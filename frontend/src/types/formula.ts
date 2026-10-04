@@ -5,6 +5,8 @@ export type FormulaState = '草稿' | '在用' | '停用'
 
 export interface Formula {
   id: string
+  /** 稳定业务编号：跨设备离线对账的合并键，一经生成不再改变 */
+  bizNo: string
   /** 香方名 */
   name: string
   /** 香型：线香/盘香/香丸/香饼 */

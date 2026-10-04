@@ -4,6 +4,8 @@ export type ProcessMethod = '生用' | '酒蒸' | '蜜炙' | '炒黄' | '醋浸'
 
 export interface Material {
   id: string
+  /** 稳定业务编号：跨设备离线对账的合并键 */
+  bizNo: string
   /** 香料名 */
   name: string
   /** 产地 */
